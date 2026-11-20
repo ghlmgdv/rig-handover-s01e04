@@ -1,0 +1,91 @@
+name: Publish digest preview
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12.21.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: pnpm install --ignore-scripts --no-frozen-lockfile
+
+      - name: Run rig and render the marked preview
+        env:
+          LANE_MARKER: S01E04 review preview
+          PORT: '8787'
+        run: |
+          set -euo pipefail
+          mkdir -p _site
+          pnpm start > /tmp/rig.log 2>&1 &
+          server_pid=$!
+          cleanup() {
+            kill "$server_pid" 2>/dev/null || true
+            wait "$server_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          ready=0
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8787/health >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" -ne 1 ]; then
+            cat /tmp/rig.log
+            exit 1
+          fi
+
+          curl --fail --silent http://127.0.0.1:8787/digest/2026-10-28 --output _site/index.html
+          grep -q 'S01E04 review preview' _site/index.html
+          grep -q 'digest/render' _site/index.html
+          grep -q '<style>' _site/index.html
+          if grep -Eiq '<script|<(link|img)[^>]+(src|href)="https?://' _site/index.html; then
+            echo 'preview is not self-contained'
+            exit 1
+          fi
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

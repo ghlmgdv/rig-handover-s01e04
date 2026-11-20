@@ -35,7 +35,7 @@ jobs:
 
       - name: Run rig and render the marked preview
         env:
-          LANE_MARKER: S01E04 review preview
+          LANE_MARKER: 36p7-laod
           PORT: '8787'
         run: |
           set -euo pipefail
@@ -62,7 +62,7 @@ jobs:
           fi
 
           curl --fail --silent http://127.0.0.1:8787/digest/2026-10-28 --output _site/index.html
-          grep -q 'S01E04 review preview' _site/index.html
+          grep -q '36p7-laod' _site/index.html
           grep -q 'digest/render' _site/index.html
           grep -q '<style>' _site/index.html
           if grep -Eiq '<script|<(link|img)[^>]+(src|href)="https?://' _site/index.html; then
